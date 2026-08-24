@@ -1,0 +1,17 @@
+body{ font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 0; padding: 0; }
+.app-container{ max-width: 900px; margin: 24px auto; padding: 16px; }
+textarea{ width: 100%; padding: 8px; font-size: 14px; }
+.controls{ margin-top: 8px; }
+button{ padding: 8px 12px; font-size: 14px; }
+.result{ margin-top: 20px; }
+.pill{ display: inline-block; padding: 6px 10px; border-radius: 16px; color: #fff; font-weight: 600; }
+.pill.low{ background: #2ecc71; }
+.pill.medium{ background: #f1c40f; }
+.pill.high{ background: #e74c3c; }
+.section{ border-top: 1px solid #eee; padding: 10px 0; }
+.section ul{ list-style: none; padding: 0; }
+.section li{ padding: 8px 0; }
+.sev{ margin-left: 8px; font-size: 13px; color: #555; }
+.none{ color: #777; font-style: italic; }
+.error{ margin-top: 12px; color: #b00020; }
+.explain pre{ white-space: pre-wrap; background: #f7f7f7; padding: 8px; border-radius: 6px; }

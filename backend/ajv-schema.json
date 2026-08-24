@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["riskScore","riskLevel","businessRisks","technicalRisks","securityRisks","missingRequirements","edgeCases","regressionAreas","explainers"],
+  "properties": {
+    "riskScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "riskLevel": { "type": "string", "enum": ["Low","Medium","High"] },
+    "businessRisks": { "type": "array" },
+    "technicalRisks": { "type": "array" },
+    "securityRisks": { "type": "array" },
+    "missingRequirements": { "type": "array" },
+    "edgeCases": { "type": "array" },
+    "regressionAreas": { "type": "array" },
+    "explainers": { "type": "object", "properties": { "howScoreWasComputed": { "type": "string" }, "confidence": { "type": "string" } } }
+  }
+}
