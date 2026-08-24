@@ -3,7 +3,7 @@ const Ajv = require('ajv')
 const schema = require('../ajv-schema.json')
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4'
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo'
 const MAX_RETRIES = parseInt(process.env.LLM_MAX_RETRIES || '3', 10)
 const TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || '15000', 10)
 
@@ -61,8 +61,8 @@ async function callOpenAI(messages, timeoutMs){
       body: JSON.stringify({
         model: OPENAI_MODEL,
         messages,
-        temperature: 0.0,
-        max_tokens: 1500
+        temperature: 0.2,
+        max_tokens: 2000
       }),
       signal: controller ? controller.signal : undefined
     })
@@ -86,7 +86,9 @@ module.exports.analyze = async function(requirement){
   const ajv = new Ajv({ allErrors: true, strict: false })
   const validate = ajv.compile(schema)
 
-  const systemPrompt = `You are a requirements risk analyst. Given a user's requirement, output ONLY valid JSON that follows this structure exactly (no surrounding text):
+  const systemPrompt = `You are a requirements risk analyst. Your job is to find and list any possible risks, missing requirements, edge cases, and regression areas from a software requirement. Be SENSITIVE: list any potential issue even if low-likelihood or low-severity. If uncertain, err on the side of listing an item with "Low" severity and a brief rationale.
+
+Return ONLY a single JSON object that exactly follows this structure (no surrounding text):
 {
   "riskScore": integer 0-100,
   "riskLevel": "Low"|"Medium"|"High",
@@ -98,9 +100,21 @@ module.exports.analyze = async function(requirement){
   "regressionAreas": array of objects,
   "explainers": { "howScoreWasComputed": string, "confidence": string }
 }
-Use severity/likelihood/impact values: Low, Medium, or High. Always return the arrays (use [] when empty). Do not include any keys beyond those above. Be concise in descriptions. Return parsable JSON only.`
 
-  const userPrompt = `Requirement:\n\n"""\n${requirement.trim()}\n"""\n\nIf you cannot identify any items for a section, return an empty array for that field.`
+Guidelines:
+- Use severity/likelihood/impact values: Low, Medium, or High.
+- Include concise mitigations for each risk when possible.
+- Always return arrays (use [] when empty).
+- Do not invent metrics. If you cannot compute a numeric riskScore precisely, provide a reasonable estimate and explain the method in explainers.howScoreWasComputed.
+- Be concise but thorough. Include items for common omissions: authentication/authorization, input validation, rate-limiting, error handling, logging/monitoring, performance SLAs, data retention/backup, encryption in transit/at rest, third-party dependency failures, API versioning, concurrency/idempotency, and CORS/CSP/security headers.
+
+Examples (for clarity only, do not include these examples in your output):
+- If the requirement mentions a payment flow but does not mention PCI or secure handling -> add a High security risk: "Payment handling missing PCI controls" with mitigation.
+- If the requirement describes endpoints but never mentions authentication -> add a Medium/High security risk: "Missing auth".
+- If performance or SLAs are not stated -> add a Missing Requirement: "Performance targets not stated".
+`
+
+  const userPrompt = `Requirement:\n\n"""\n${requirement.trim()}\n"""\n\nRemember: return only JSON following the exact schema.`
 
   let attempt = 0
   let lastError = null
@@ -117,9 +131,7 @@ Use severity/likelihood/impact values: Low, Medium, or High. Always return the a
       // Try to extract JSON from the content
       const parsed = extractJsonFromText(content)
       if(!parsed){
-        // Ask the model to return only JSON in a retry
         lastError = new Error('Could not extract JSON from model response')
-        // Prepare a clarifying prompt to return only JSON
         const clarify = `The previous response was not valid JSON. Please reply with only the JSON object (no explanation). Follow the exact schema previously provided.`
         await sleep(500 * attempt)
         const clarificationMessages = [
@@ -133,11 +145,6 @@ Use severity/likelihood/impact values: Low, Medium, or High. Always return the a
         if(parsed2){
           if(validate(parsed2)) return parsed2
           lastError = new Error('Parsed JSON failed schema validation on retry')
-          const errorsText = ajv.errorsText(validate.errors)
-          // continue to next attempt with more info
-          const feedback = `The JSON you returned failed schema validation: ${errorsText}. Please return corrected JSON only.`
-          await sleep(500 * attempt)
-          // send feedback and retry
           continue
         } else {
           continue
@@ -149,8 +156,7 @@ Use severity/likelihood/impact values: Low, Medium, or High. Always return the a
       if(!valid){
         const errorsText = ajv.errorsText(validate.errors)
         lastError = new Error(`Analyzer output failed schema validation: ${errorsText}`)
-        // Give the model the validation errors and ask to correct
-        const feedback = `The JSON you returned failed schema validation: ${errorsText}. Please return corrected JSON only with the same schema.`
+        const feedback = `The JSON you returned failed schema validation: ${errorsText}. Please return corrected JSON only.`
         await sleep(500 * attempt)
         const clarificationMessages = [
           { role: 'system', content: systemPrompt },
@@ -161,7 +167,6 @@ Use severity/likelihood/impact values: Low, Medium, or High. Always return the a
         const content2 = await callOpenAI(clarificationMessages, TIMEOUT_MS)
         const parsed2 = extractJsonFromText(content2)
         if(parsed2 && validate(parsed2)) return parsed2
-        // otherwise loop and retry
         continue
       }
 
@@ -169,11 +174,9 @@ Use severity/likelihood/impact values: Low, Medium, or High. Always return the a
       return parsed
     }catch(err){
       lastError = err
-      // exponential backoff before retrying
       await sleep(500 * attempt)
     }
   }
 
-  // All retries exhausted
   throw new Error(`LLM analyzer failed after ${MAX_RETRIES} attempts: ${lastError && lastError.message}`)
 }
